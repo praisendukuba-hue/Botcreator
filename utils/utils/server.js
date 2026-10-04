@@ -96,14 +96,13 @@ app.post('/api/create-bot', async (req, res) => {
       status: 'active',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    };    
-    const docRef = await db.collection('bots').add(botData);
+    };        const docRef = await db.collection('bots').add(botData);
     
     // Send admin notification
     if (process.env.ADMIN_TELEGRAM_BOT_TOKEN) {
       try {
         await axios.post(`https://api.telegram.org/bot${process.env.ADMIN_TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          chat_id: process.env.ADMIN_TELEGRAM_BOT_TOKEN, // Replace with your actual admin chat ID
+          chat_id: process.env.ADMIN_CHAT_ID || process.env.ADMIN_TELEGRAM_BOT_TOKEN, // Use ADMIN_CHAT_ID in .env for your personal ID
           text: `🎉 <b>New Bot Created</b>\n\n🤖 Name: ${data.name}\n💰 Currency: ${data.currency}\n💳 Payment: ${data.payMethod}\n👤 Owner: ${data.ownerId}`,
           parse_mode: 'HTML'
         });
@@ -243,8 +242,8 @@ app.get('/api/user/:uid/profile', async (req, res) => {
       });
     }
     
-    res.json({ success: true, profile: doc.data() });  } catch (error) {
-    console.error('Get user profile error:', error);
+    res.json({ success: true, profile: doc.data() });  
+  } catch (error) {    console.error('Get user profile error:', error);
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
 });
@@ -292,7 +291,93 @@ app.post('/api/store/purchase', async (req, res) => {
 });
 
 // ==========================================
-// ERROR HANDLER// ==========================================
+// 10. CHECK PAYMENT STATUS (Frontend polls this)
+// ==========================================app.post('/api/check-payment', async (req, res) => {
+  try {
+    const { memo } = req.body;
+    
+    if (!memo) {
+      return res.status(400).json({ error: 'Memo is required' });
+    }
+
+    // Check if payment was already confirmed
+    const paymentDoc = await db.collection('payments')
+      .where('memo', '==', memo)
+      .where('status', '==', 'confirmed')
+      .get();
+    
+    if (!paymentDoc.empty) {
+      return res.json({ confirmed: true });
+    }
+    
+    res.json({ confirmed: false });
+  } catch (error) {
+    console.error('Check payment error:', error);
+    res.status(500).json({ error: 'Failed to check payment' });
+  }
+});
+
+// ==========================================
+// 11. PROCESS BLOCKCHAIN PAYMENT (Called by monitor)
+// ==========================================
+app.post('/api/process-payment', async (req, res) => {
+  try {
+    const { txHash, memo, amount, sender, currency } = req.body;
+    
+    if (!txHash || !memo || !amount || !currency) {
+      return res.status(400).json({ error: 'Missing required payment fields' });
+    }
+
+    // Extract user ID from memo (Format: CLUR_PREMIUM_{userId}_{timestamp})
+    const memoParts = memo.split('_');
+    if (memoParts.length < 3 || memoParts[0] !== 'CLUR' || memoParts[1] !== 'PREMIUM') {
+      return res.status(400).json({ error: 'Invalid memo format' });
+    }
+    
+    const userId = memoParts[2];
+    
+    // Check if already processed to prevent double crediting
+    const existing = await db.collection('payments')
+      .where('txHash', '==', txHash)
+      .get();
+    
+    if (!existing.empty) {      return res.json({ success: true, message: 'Already processed' });
+    }
+    
+    // Save payment record
+    await db.collection('payments').add({
+      txHash,
+      memo,
+      userId,
+      amount,
+      currency,
+      sender,
+      status: 'confirmed',
+      confirmedAt: new Date().toISOString()
+    });
+    
+    // Grant Premium (30 days)
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    
+    await db.collection('users').doc(userId).set({
+      isPremium: true,
+      premiumExpiresAt: expiresAt,
+      premiumMethod: currency,
+      premiumAmount: amount,
+      premiumTxHash: txHash,
+      premiumActivatedAt: new Date().toISOString()
+    }, { merge: true });
+    
+    res.json({ success: true, message: 'Premium activated successfully' });
+  } catch (error) {
+    console.error('Process payment error:', error);
+    res.status(500).json({ error: 'Failed to process payment' });
+  }
+});
+
+// ==========================================
+// ERROR HANDLER
+// ==========================================
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
