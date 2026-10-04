@@ -96,13 +96,14 @@ app.post('/api/create-bot', async (req, res) => {
       status: 'active',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    };        const docRef = await db.collection('bots').add(botData);
+    };    
+    const docRef = await db.collection('bots').add(botData);
     
     // Send admin notification
     if (process.env.ADMIN_TELEGRAM_BOT_TOKEN) {
       try {
         await axios.post(`https://api.telegram.org/bot${process.env.ADMIN_TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          chat_id: process.env.ADMIN_CHAT_ID || process.env.ADMIN_TELEGRAM_BOT_TOKEN, // Use ADMIN_CHAT_ID in .env for your personal ID
+          chat_id: process.env.ADMIN_CHAT_ID || process.env.ADMIN_TELEGRAM_BOT_TOKEN,
           text: `🎉 <b>New Bot Created</b>\n\n🤖 Name: ${data.name}\n💰 Currency: ${data.currency}\n💳 Payment: ${data.payMethod}\n👤 Owner: ${data.ownerId}`,
           parse_mode: 'HTML'
         });
@@ -201,9 +202,6 @@ app.post('/api/webhook/payment', async (req, res) => {
   try {
     const { userId, amount, currency, txHash, method } = req.body;
     
-    // Verify the transaction (implement your blockchain verification logic here)
-    // For now, we trust the webhook
-    
     // Grant Premium (30 days)
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     
@@ -243,9 +241,9 @@ app.get('/api/user/:uid/profile', async (req, res) => {
     }
     
     res.json({ success: true, profile: doc.data() });  
-  } catch (error) {    console.error('Get user profile error:', error);
-    res.status(500).json({ error: 'Failed to fetch profile' });
-  }
+  } catch (error) {    
+    console.error('Get user profile error:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });  }
 });
 
 // ==========================================
@@ -276,8 +274,6 @@ app.post('/api/store/purchase', async (req, res) => {
   try {
     const { userId, templateId, paymentMethod, txHash } = req.body;
     
-    // Verify payment (implement your logic here)
-    
     // Add to user's purchased templates
     await db.collection('users').doc(userId).set({
       purchasedTemplates: admin.firestore.FieldValue.arrayUnion(templateId)
@@ -292,11 +288,11 @@ app.post('/api/store/purchase', async (req, res) => {
 
 // ==========================================
 // 10. CHECK PAYMENT STATUS (Frontend polls this)
-// ==========================================app.post('/api/check-payment', async (req, res) => {
+// ==========================================
+app.post('/api/check-payment', async (req, res) => {
   try {
     const { memo } = req.body;
-    
-    if (!memo) {
+        if (!memo) {
       return res.status(400).json({ error: 'Memo is required' });
     }
 
@@ -341,11 +337,11 @@ app.post('/api/process-payment', async (req, res) => {
       .where('txHash', '==', txHash)
       .get();
     
-    if (!existing.empty) {      return res.json({ success: true, message: 'Already processed' });
+    if (!existing.empty) {
+      return res.json({ success: true, message: 'Already processed' });
     }
     
-    // Save payment record
-    await db.collection('payments').add({
+    // Save payment record    await db.collection('payments').add({
       txHash,
       memo,
       userId,
