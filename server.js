@@ -281,7 +281,51 @@ app.post('/api/process-payment', async (req, res) => {
     res.status(500).json({ error: 'Failed to process payment' });
   }
 });
+// ==========================================
+// 12. GET SINGLE BOT (for dashboard/admin panel)
+// ==========================================
+app.get('/api/bot/:id', async (req, res) => {
+  try {
+    const doc = await db.collection('bots').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Bot not found' });
+    
+    const data = doc.data();
+    delete data.token;    // Security: never send token to frontend
+    delete data.apiKey;   // Security: never send API key to frontend
+    
+    res.json({ success: true, bot: { id: doc.id, ...data } });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch bot' });
+  }
+});
 
+// ==========================================
+// 13. GET BOT STATS (Total users, uptime, etc.)
+// ==========================================
+app.get('/api/bot/:id/stats', async (req, res) => {
+  try {
+    const doc = await db.collection('bots').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Bot not found' });
+    
+    const b = doc.data();
+    const created = new Date(b.createdAt || Date.now()).getTime();
+    const last = b.lastActive ? new Date(b.lastActive).getTime() : Date.now();
+    const uptimeHours = Math.max(0, Math.floor((last - created) / 3600000));
+    
+    res.json({
+      success: true,
+      stats: {
+        users: b.users || 0,
+        uptimeHours: uptimeHours,
+        currency: b.currency || '-',
+        payMethod: b.payMethod || 'Manual',
+        status: b.status || 'active'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
